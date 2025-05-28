@@ -1,10 +1,10 @@
 import time
-import multiprocessing
 from hashlib import sha256
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
 
-PASSWORDS_TO_BRUTE_FORCE = {
+PASSWORDS_TO_BRUTE_FORCE = [
     "b4061a4bcfe1a2cbf78286f3fab2fb578266d1bd16c414c650c5ac04dfc696e1",
     "cf0b0cfc90d8b4be14e00114827494ed5522e9aa1c7e6960515b58626cad0b44",
     "e34efeb4b9538a949655b788dcb517f4a82e997e9e95271ecd392ac073fe216d",
@@ -15,57 +15,41 @@ PASSWORDS_TO_BRUTE_FORCE = {
     "1273682fa19625ccedbe2de2817ba54dbb7894b7cefb08578826efad492f51c9",
     "7e8f0ada0a03cbee48a0883d549967647b3fca6efeb0a149242f19e4b68d53d6",
     "e5f3ff26aa8075ce7513552a9af1882b4fbc2a47a3525000f6eb887ab9622207",
-}
-
-RANGE_LIMIT = 100_000_000
+]
 
 
-def sha256_hash_str(to_hash: str) -> str:
-    return sha256(to_hash.encode("utf-8")).hexdigest()
+def worker(start: int, end: int, hashes_set: set[str]) -> list[str]:
+    matches = []
+    for pas in range(start, end):
+        candidate = str(pas).zfill(8)
+        hashed = sha256(candidate.encode()).hexdigest()
+        if hashed in hashes_set:
+            matches.append(candidate)
+    return matches
 
 
-def worker(start: int, end: int, hashes: set[str]) -> list[tuple[str, str]]:
-    found = []
-    for number in range(start, end):
-        pwd = f"{number:08d}"
-        h = sha256(pwd.encode("utf-8")).hexdigest()
-        if h in hashes:
-            found.append((pwd, h))
-    return found
+def brute_force_password() -> None:
+    hashes_set = set(PASSWORDS_TO_BRUTE_FORCE)
+    num_workers = multiprocessing.cpu_count()
+    total_range = 100_000_000
+    step = total_range // num_workers
+    futures = []
 
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        for i in range(num_workers):
+            start = i * step
+            end = start + step if i < num_workers - 1 else total_range
+            futures.append(executor.submit(worker, start, end, hashes_set))
 
-def brute_force_password():
-    cpu_count = multiprocessing.cpu_count()
-    chunk_size = RANGE_LIMIT // cpu_count
-    print(f"Using {cpu_count} processes...")
+        results = []
+        for future in futures:
+            results.extend(future.result())
 
-    found = []
-    with ProcessPoolExecutor(max_workers=cpu_count) as executor:
-        futures = [
-            executor.submit(
-                worker,
-                i * chunk_size,
-                (i + 1) * chunk_size if i < cpu_count - 1 else RANGE_LIMIT,
-                PASSWORDS_TO_BRUTE_FORCE,
-            )
-            for i in range(cpu_count)
-        ]
-
-        for future in as_completed(futures):
-            result = future.result()
-            found.extend(result)
-            if len(found) >= len(PASSWORDS_TO_BRUTE_FORCE):
-                break
-
-    print("🔐 Found passwords:")
-    for index_, (password, hash_val) in enumerate(found, start=1):
-        print(f"Password №{index_}: {password} -> {hash_val}")
-
-    return found
+    print("Found passwords:", results)
 
 
 if __name__ == "__main__":
     start_time = time.perf_counter()
     brute_force_password()
     end_time = time.perf_counter()
-    print(f"⏱️ Elapsed: {end_time - start_time:.2f} seconds")
+    print("Elapsed:", end_time - start_time)
