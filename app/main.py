@@ -31,8 +31,6 @@ def worker(start: int, end: int, hashes: set[str]) -> list[tuple[str, str]]:
         h = sha256(pwd.encode("utf-8")).hexdigest()
         if h in hashes:
             found.append((pwd, h))
-            if len(found) == len(hashes):
-                break
     return found
 
 
